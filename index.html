@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Courier</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+        body {
+            font-family: 'Orbitron', sans-serif;
+            background-color: #0a0a1a;
+            color: #e0e0e0;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            cursor: none;
+            transition: transform 0.1s ease-out;
+        }
+        .ui-element, .upgrade-button, .mission-claim-button {
+            text-shadow: 0 0 5px #00d9ff, 0 0 10px #00d9ff;
+        }
+        .screen {
+            background-color: rgba(10, 10, 26, 0.9);
+            backdrop-filter: blur(8px);
+        }
+        .hangar-item-button.disabled, .upgrade-button.disabled, .mission-claim-button.disabled, #prestigeButton.disabled, .temp-upgrade-button.disabled {
+            background-color: #4b5563;
+            cursor: not-allowed;
+            color: #9ca3af;
+            text-shadow: none;
+        }
+        .hangar-item-button.equipped {
+            background-color: #eab308;
+            color: #111827;
+            text-shadow: none;
+        }
+        #bossHealthContainer, #bombCooldownContainer, #voidWarning {
+            transition: opacity 0.5s;
+        }
+        #bombCooldownOverlay {
+            transition: height 0.2s linear;
+        }
+        #xpBar {
+            transition: width 0.5s ease-out;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen m-0">
+
+    <div class="relative w-full h-full max-w-screen-lg max-h-screen-md">
+        <!-- Main Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- UI Elements -->
+        <div class="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10">
+            <div class="flex items-center space-x-4">
+                 <div id="livesContainer" class="flex space-x-1"></div>
+                 <div id="weaponCooldownContainer" class="w-24 h-6 bg-gray-700 rounded-full overflow-hidden border-2 border-cyan-400/50 hidden">
+                    <div id="weaponCooldownBar" class="h-full bg-cyan-400" style="width: 100%; transition: width 0.1s linear;"></div>
+                </div>
+                 <div id="bombCooldownContainer" class="w-10 h-10 bg-gray-700 rounded-full overflow-hidden border-2 border-red-400/50 hidden relative">
+                    <div class="absolute inset-0 flex items-center justify-center font-bold text-lg">B</div>
+                    <div id="bombCooldownOverlay" class="absolute bottom-0 left-0 right-0 bg-black/70" style="height: 0%;"></div>
+                </div>
+            </div>
+            <div class="text-right">
+                <p class="text-lg md:text-xl ui-element">SCORE: <span id="score">0</span></p>
+                <p class="text-lg md:text-xl ui-element">HI-SCORE: <span id="highScore">0</span></p>
+                <p id="waveCounter" class="text-lg md:text-xl ui-element hidden">WAVE: <span id="wave">1</span></p>
+            </div>
+        </div>
+        
+        <!-- Boss Health Bar -->
+        <div id="bossHealthContainer" class="absolute top-20 left-1/2 -translate-x-1/2 w-3/4 max-w-md hidden opacity-0">
+            <p id="bossName" class="text-center text-red-500 font-bold mb-1">BOSS INCOMING</p>
+            <div class="w-full h-4 bg-gray-700 rounded-full overflow-hidden border-2 border-red-500/50">
+                <div id="bossHealthBar" class="h-full bg-red-500" style="width: 100%; transition: width 0.5s ease-out;"></div>
+            </div>
+        </div>
+        
+        <!-- Void Warning -->
+        <div id="voidWarning" class="absolute bottom-20 left-1/2 -translate-x-1/2 text-red-500 font-bold text-xl hidden opacity-0" style="text-shadow: 0 0 5px #000;">
+            !!! VOID WARNING !!!
+        </div>
+
+        <!-- Level/XP Bar -->
+        <div id="levelContainer" class="absolute bottom-0 left-0 right-0 p-4 hidden">
+            <div class="flex justify-between items-center mb-1 text-lg">
+                <p>LVL: <span id="level">1</span></p>
+                <p>XP: <span id="xp">0</span> / <span id="xpToNextLevel">100</span></p>
+            </div>
+            <div class="w-full h-4 bg-gray-700 rounded-full overflow-hidden border-2 border-purple-400/50">
+                <div id="xpBar" class="h-full bg-purple-500" style="width: 0%;"></div>
+            </div>
+        </div>
+
+        <div id="floatingTextContainer" class="absolute inset-0 pointer-events-none z-20"></div>
+
+        <!-- Start Screen -->
+        <div id="startScreen" class="screen absolute inset-0 flex flex-col items-center justify-center text-center p-4 z-30">
+            <h2 class="text-4xl md:text-6xl font-bold ui-element mb-4">COSMIC COURIER</h2>
+            <div class="flex flex-col space-y-4">
+                <button id="startButton" class="bg-cyan-400 text-gray-900 font-bold py-3 px-8 rounded-lg text-2xl hover:bg-cyan-300 transition-all shadow-lg shadow-cyan-500/50 transform hover:scale-105">ENDLESS MODE</button>
+                <button id="survivalButton" class="bg-red-500 text-white font-bold py-3 px-8 rounded-lg text-2xl hover:bg-red-400 transition-all shadow-lg shadow-red-500/50">SURVIVAL WAVES</button>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mt-8">
+                <button id="hangarButton" class="bg-purple-500 text-white font-bold py-3 px-8 rounded-lg text-xl hover:bg-purple-400 transition-all shadow-lg shadow-purple-500/50">HANGAR</button>
+                <button id="missionsButton" class="bg-orange-500 text-white font-bold py-3 px-8 rounded-lg text-xl hover:bg-orange-400 transition-all shadow-lg shadow-orange-500/50">MISSIONS</button>
+            </div>
+            <p class="text-sm text-gray-400 mt-4">(Desktop: Use WASD to move, B for Bomb)</p>
+            <button id="dailyRewardButton" class="hidden mt-8 bg-yellow-500 text-gray-900 font-bold py-2 px-6 rounded-lg hover:bg-yellow-400 transition-all shadow-lg shadow-yellow-500/50">CLAIM DAILY REWARD (+50 Orbs)</button>
+        </div>
+        
+        <!-- Hangar Screen -->
+        <div id="hangarScreen" class="screen absolute inset-0 flex-col items-center justify-center p-4 z-30 hidden overflow-y-auto">
+             <div class="flex justify-between items-center w-full max-w-lg mb-2"> <h2 class="text-3xl md:text-4xl font-bold ui-element">HANGAR</h2> <button id="statsButton" class="bg-gray-600 text-white font-bold py-1 px-3 rounded-lg text-sm hover:bg-gray-500">STATS</button> </div>
+            <p class="text-lg md:text-xl mb-4">Orbs: <span id="totalOrbs" class="text-cyan-300">0</span></p>
+            <div class="w-full max-w-lg space-y-3">
+                <div id="coreUpgrades"> <h3 class="text-xl font-bold text-purple-300 mb-2">Core Systems</h3> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Laser Cooldown</p><button data-upgrade="cooldown" class="upgrade-button bg-green-500 font-bold py-1 px-3 rounded">UPGRADE</button></div> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Hull Integrity (Lives)</p><button data-upgrade="hull" class="upgrade-button bg-green-500 font-bold py-1 px-3 rounded">UPGRADE</button></div> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Engine Power</p><button data-upgrade="engine" class="upgrade-button bg-green-500 font-bold py-1 px-3 rounded">UPGRADE</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Bomb Bay</p><button data-upgrade="bomb" class="upgrade-button bg-green-500 font-bold py-1 px-3 rounded">UNLOCK</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Orb Magnet Range</p><button data-upgrade="magnet_range" class="upgrade-button bg-green-500 font-bold py-1 px-3 rounded">UPGRADE</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Orb Spawn Rate</p><button data-upgrade="orb_spawn" class="upgrade-button bg-green-500 font-bold py-1 px-3 rounded">UPGRADE</button></div></div>
+                <div id="armory"> <h3 class="text-xl font-bold text-purple-300 mt-3 mb-2">Armory</h3> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Laser Cannon</p><button data-item="laser" data-type="weapon" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Twin Lasers</p><button data-item="twin_laser" data-type="weapon" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Spread Shot</p><button data-item="spread" data-type="weapon" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Chain Lightning</p><button data-item="chain" data-type="weapon" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Railgun</p><button data-item="railgun" data-type="weapon" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Pulse Cannon</p><button data-item="pulse_cannon" data-type="weapon" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Flak Cannon</p><button data-item="flak_cannon" data-type="weapon" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div></div>
+                <div id="shipBay"> <h3 class="text-xl font-bold text-purple-300 mt-3 mb-2">Ship Bay</h3> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Default Skin</p><button data-item="default" data-type="skin" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Viper Skin (+1 Life)</p><button data-item="viper" data-type="skin" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Phoenix Skin (Rebirth)</p><button data-item="phoenix" data-type="skin" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Stealth Skin (1 Free Bomb)</p><button data-item="stealth" data-type="skin" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Juggernaut Skin (+1 Life)</p><button data-item="juggernaut" data-type="skin" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Twin Boosters (Cosmetic)</p><button data-item="twin_booster" data-type="skin" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">EQUIP</button></div></div>
+                <div id="environments"> <h3 class="text-xl font-bold text-purple-300 mt-3 mb-2">Environments</h3> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Deep Space</p><button data-item="deep_space" data-type="environment" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">SELECT</button></div> <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Crimson Nebula</p><button data-item="crimson_nebula" data-type="environment" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">SELECT</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Crystal Caverns</p><button data-item="crystal_caverns" data-type="environment" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">SELECT</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Volcanic Field</p><button data-item="volcanic_field" data-type="environment" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">SELECT</button></div><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Asteroid Belt</p><button data-item="asteroid_belt" data-type="environment" class="hangar-item-button bg-blue-500 font-bold py-1 px-3 rounded">SELECT</button></div></div>
+                <div id="prestige"><h3 class="text-xl font-bold text-yellow-400 mt-3 mb-2">Prestige</h3><div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Reset for +10% Orbs (Lvl 50)</p><button id="prestigeButton" class="bg-yellow-500 font-bold py-1 px-3 rounded">PRESTIGE</button></div></div>
+            </div>
+            <button id="backButton" class="mt-6 bg-gray-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-gray-400">BACK</button>
+        </div>
+        
+        <!-- Missions Screen -->
+        <div id="missionsScreen" class="screen absolute inset-0 flex-col items-center justify-center p-4 z-30 hidden overflow-y-auto"> <h2 class="text-3xl md:text-4xl font-bold ui-element mb-4">MISSIONS</h2> <div id="missionsList" class="w-full max-w-lg space-y-3"></div> <button id="missionsBackButton" class="mt-6 bg-gray-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-gray-400">BACK</button> </div>
+        
+        <!-- Stats Screen -->
+        <div id="statsScreen" class="screen absolute inset-0 flex-col items-center justify-center p-4 z-30 hidden"> <h2 class="text-3xl md:text-4xl font-bold ui-element mb-4">CAREER STATS</h2> <div class="w-full max-w-md space-y-2 text-lg bg-black/30 p-4 rounded-lg"> <p>Games Played: <span id="statsGamesPlayed" class="text-cyan-300">0</span></p> <p>Total Orbs Collected: <span id="statsTotalOrbs" class="text-cyan-300">0</span></p> <p>Enemies Destroyed: <span id="statsEnemiesDestroyed" class="text-cyan-300">0</span></p> <p>Bosses Defeated: <span id="statsBossesDefeated" class="text-cyan-300">0</span></p> <p>Highest Score: <span id="statsHighScore" class="text-cyan-300">0</span></p> </div> <button id="statsBackButton" class="mt-6 bg-gray-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-gray-400">BACK</button> </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="screen absolute inset-0 flex-col items-center justify-center text-center p-4 z-30 hidden">
+             <h2 class="text-4xl md:text-6xl font-bold ui-element mb-4 text-red-500" style="text-shadow: 0 0 5px #ff0000, 0 0 10px #ff0000;">GAME OVER</h2>
+            <p class="text-xl md:text-2xl mb-2">Final Score: <span id="finalScore" class="text-cyan-300">0</span></p>
+            <p class="text-lg md:text-xl mb-2">Orbs Collected: <span id="orbsCollected" class="text-cyan-300">0</span></p>
+            <p id="newHighScoreText" class="text-lg md:text-xl mb-8 hidden text-green-400">NEW HIGH SCORE!</p>
+            <div class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                <button id="restartButton" class="bg-cyan-400 text-gray-900 font-bold py-3 px-8 rounded-lg text-2xl hover:bg-cyan-300 transition-all shadow-lg shadow-cyan-500/50 transform hover:scale-105">RESTART</button>
+                <button id="gameOverHangarButton" class="bg-purple-500 text-white font-bold py-3 px-8 rounded-lg text-2xl hover:bg-purple-400 transition-all shadow-lg shadow-purple-500/50 transform hover:scale-105">HANGAR</button>
+            </div>
+        </div>
+        
+        <!-- Victory Screen -->
+        <div id="victoryScreen" class="screen absolute inset-0 flex-col items-center justify-center text-center p-4 z-30 hidden">
+             <h2 class="text-4xl md:text-6xl font-bold ui-element mb-4 text-green-400" style="text-shadow: 0 0 5px #22c55e, 0 0 10px #22c55e;">VICTORY</h2>
+            <p class="text-xl md:text-2xl mb-2">Final Score: <span id="victoryScore" class="text-cyan-300">0</span></p>
+            <p class="text-lg md:text-xl mb-2">Orbs Collected: <span id="victoryOrbs" class="text-cyan-300">0</span></p>
+            <p class="text-lg md:text-xl mb-8">XP Gained: <span id="victoryXP" class="text-purple-400">0</span></p>
+            <div class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                <button id="victoryContinueButton" class="bg-cyan-400 text-gray-900 font-bold py-3 px-8 rounded-lg text-2xl hover:bg-cyan-300 transition-all shadow-lg shadow-cyan-500/50 transform hover:scale-105">CONTINUE</button>
+            </div>
+        </div>
+
+        <!-- Intermission Shop Screen -->
+        <div id="intermissionScreen" class="screen absolute inset-0 flex-col items-center justify-center text-center p-4 z-30 hidden">
+             <h2 class="text-3xl md:text-4xl font-bold ui-element mb-4">WAVE CLEARED</h2>
+            <p class="text-lg md:text-xl mb-4">Orbs This Run: <span id="intermissionOrbs" class="text-cyan-300">0</span></p>
+            <div class="w-full max-w-lg space-y-3">
+                <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Repair Hull (+1 Life)</p><button data-upgrade="heal" class="temp-upgrade-button bg-green-500 font-bold py-1 px-3 rounded">15 Orbs</button></div>
+                <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Increase Fire Rate</p><button data-upgrade="fire_rate" class="temp-upgrade-button bg-green-500 font-bold py-1 px-3 rounded">20 Orbs</button></div>
+                <div class="bg-black/30 p-3 rounded-lg flex justify-between items-center"><p>Increase Move Speed</p><button data-upgrade="move_speed" class="temp-upgrade-button bg-green-500 font-bold py-1 px-3 rounded">10 Orbs</button></div>
+            </div>
+            <button id="continueButton" class="mt-6 bg-cyan-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-cyan-400">CONTINUE</button>
+        </div>
+    </div>
+
+    <script>
+        const ui = {
+            canvas: document.getElementById('gameCanvas'), score: document.getElementById('score'), highScore: document.getElementById('highScore'),
+            livesContainer: document.getElementById('livesContainer'), weaponCooldownContainer: document.getElementById('weaponCooldownContainer'),
+            weaponCooldownBar: document.getElementById('weaponCooldownBar'), bombCooldownContainer: document.getElementById('bombCooldownContainer'), bombCooldownOverlay: document.getElementById('bombCooldownOverlay'),
+            floatingTextContainer: document.getElementById('floatingTextContainer'), bossHealthContainer: document.getElementById('bossHealthContainer'), bossHealthBar: document.getElementById('bossHealthBar'),
+            voidWarning: document.getElementById('voidWarning'), levelContainer: document.getElementById('levelContainer'), level: document.getElementById('level'), xp: document.getElementById('xp'), xpToNextLevel: document.getElementById('xpToNextLevel'), xpBar: document.getElementById('xpBar'),
+            waveCounter: document.getElementById('waveCounter'), wave: document.getElementById('wave'), bossName: document.getElementById('bossName'),
+            screens: { start: document.getElementById('startScreen'), hangar: document.getElementById('hangarScreen'), gameOver: document.getElementById('gameOverScreen'), missions: document.getElementById('missionsScreen'), stats: document.getElementById('statsScreen'), victory: document.getElementById('victoryScreen'), intermission: document.getElementById('intermissionScreen') },
+            buttons: { start: document.getElementById('startButton'), survival: document.getElementById('survivalButton'), restart: document.getElementById('restartButton'), hangar: document.getElementById('hangarButton'), gameOverHangar: document.getElementById('gameOverHangarButton'), back: document.getElementById('backButton'), missions: document.getElementById('missionsButton'), missionsBack: document.getElementById('missionsBackButton'), stats: document.getElementById('statsButton'), statsBack: document.getElementById('statsBackButton'), dailyReward: document.getElementById('dailyRewardButton'), prestige: document.getElementById('prestigeButton'), victoryContinue: document.getElementById('victoryContinueButton'), continue: document.getElementById('continueButton') },
+            gameOver: { finalScore: document.getElementById('finalScore'), orbsCollected: document.getElementById('orbsCollected'), newHighScore: document.getElementById('newHighScoreText') },
+            victory: { score: document.getElementById('victoryScore'), orbs: document.getElementById('victoryOrbs'), xp: document.getElementById('victoryXP') },
+            hangar: { totalOrbs: document.getElementById('totalOrbs'), upgradeButtons: document.querySelectorAll('.upgrade-button'), itemButtons: document.querySelectorAll('.hangar-item-button') },
+            intermission: { orbs: document.getElementById('intermissionOrbs'), upgradeButtons: document.querySelectorAll('.temp-upgrade-button') },
+            missions: { list: document.getElementById('missionsList') },
+            stats: { gamesPlayed: document.getElementById('statsGamesPlayed'), totalOrbs: document.getElementById('statsTotalOrbs'), enemiesDestroyed: document.getElementById('statsEnemiesDestroyed'), bossesDefeated: document.getElementById('statsBossesDefeated'), highScore: document.getElementById('statsHighScore') }
+        };
+        const ctx = ui.canvas.getContext('2d');
+
+        let score = 0, orbsThisRun = 0, enemiesDestroyedThisRun = 0;
+        let gameState = 'start', animationFrameId, mouse = { x: 0, y: 0, down: false };
+        let player, gameObjects, currentEnvironment, boss, difficultyModifier, camera, worldBounds, currentWave, gameMode, waveInProgress;
+        const keys = { w: { pressed: false }, a: { pressed: false }, s: { pressed: false }, d: { pressed: false } };
+        
+        const upgradeCosts = { cooldown: [10, 25, 50, 100, 200], hull: [50, 150, 300, 500], engine: [20, 60, 120, 250], bomb: [200], magnet_range: [30, 80], orb_spawn: [50, 150, 300] };
+        const itemCosts = { 
+            weapon: { spread: 100, chain: 250, twin_laser: 150, railgun: 300, pulse_cannon: 300, flak_cannon: 200 }, 
+            skin: { viper: 75, phoenix: 75, twin_booster: 100, stealth: 150, juggernaut: 200 },
+            environment: { crimson_nebula: 200, crystal_caverns: 200, volcanic_field: 200, asteroid_belt: 250 }
+        };
+        let gameData = {};
+        const defaultGameData = {
+            upgrades: { cooldown: 0, hull: 0, engine: 0, bomb: 0, magnet_range: 0, orb_spawn: 0 },
+            inventory: { 
+                totalOrbs: 0, 
+                unlockedWeapons: ['laser'], unlockedSkins: ['default'], unlockedEnvironments: ['deep_space'],
+                activeWeapons: ['laser'], activeSkins: ['default'], equippedEnvironment: 'deep_space'
+            },
+            playerProfile: { level: 1, xp: 0, prestige: 0 },
+            stats: { gamesPlayed: 0, totalOrbsCollected: 0, enemiesDestroyed: 0, bossesDefeated: 0, highScore: 0 },
+            missions: { 'destroy_asteroids_1': 0, 'collect_orbs_1': 0, 'survive_score_1': 0, 'defeat_boss_1': 0 },
+            lastRewardClaim: 0
+        };
+        const missionDefs = {
+            'destroy_asteroids_1': { title: "Enemy Clearer", description: "Destroy 50 total enemies", target: 50, reward: 100, stat: 'enemiesDestroyed' },
+            'collect_orbs_1': { title: "Orb Collector", description: "Collect 250 total orbs", target: 250, reward: 50, stat: 'totalOrbsCollected' },
+            'survive_score_1': { title: "Adept Survivor", description: "Reach a score of 2000", target: 2000, reward: 75, stat: 'highScore' },
+            'defeat_boss_1': { title: "Drone Hunter", description: "Defeat the Boss Drone", target: 1, reward: 200, stat: 'bossesDefeated' }
+        };
+
+        const environments = {
+            deep_space: { bg: 'radial-gradient(ellipse at center, #1b2735 0%, #090a0f 100%)', starColor: 'rgba(255, 255, 255, 0.5)', hazard: null },
+            crimson_nebula: { bg: 'radial-gradient(ellipse at center, #4c1d3d 0%, #1e1b2e 100%)', starColor: 'rgba(255, 200, 200, 0.6)', hazard: 'gas_pocket' },
+            crystal_caverns: { bg: 'radial-gradient(ellipse at center, #1e3a5f 0%, #0f172a 100%)', starColor: 'rgba(200, 220, 255, 0.7)', hazard: 'crystal_spire' },
+            volcanic_field: { bg: 'radial-gradient(ellipse at center, #6d2828 0%, #1c0d0d 100%)', starColor: 'rgba(255, 210, 180, 0.5)', hazard: 'solar_flare' },
+            asteroid_belt: { bg: 'radial-gradient(ellipse at center, #3a3a3a 0%, #1a1a1a 100%)', starColor: 'rgba(220, 220, 220, 0.4)', hazard: 'magnetic_field' }
+        };
+
+        const random = (min, max) => Math.random() * (max - min) + min;
+        const getDistance = (x1, y1, x2, y2) => Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        function createFloatingText(text, x, y, color) { const el = document.createElement('div'); el.innerText = text; Object.assign(el.style, { position: 'absolute', left: `${x}px`, top: `${y}px`, color: color, fontWeight: 'bold', fontSize: '1.2rem', pointerEvents: 'none', textShadow: '0 0 5px #000', transition: 'transform 1s ease-out, opacity 1s ease-out' }); ui.floatingTextContainer.appendChild(el); requestAnimationFrame(() => { el.style.transform = 'translateY(-50px)'; el.style.opacity = '0'; }); setTimeout(() => ui.floatingTextContainer.removeChild(el), 1000); }
+
+        class Player {
+            constructor() { this.baseSpeed = 0.1; this.baseCooldown = 120; this.baseLives = 1; this.phoenixUsed = false; this.bombCooldown = 0; this.maxBombCooldown = 1800; this.shieldTimer = 0; this.maxShieldTime = 300; this.baseMagnetRange = 150; this.wasdSpeed = 5; this.reset(); }
+            reset() { this.x = camera.x + ui.canvas.width / 2; this.y = camera.y + ui.canvas.height * 0.8; this.targetX = this.x; this.targetY = this.y; this.radius = 15; this.trail = []; this.speed = this.baseSpeed + (gameData.upgrades.engine * 0.02); this.maxCooldown = this.baseCooldown - (gameData.upgrades.cooldown * 15); this.lives = this.baseLives + gameData.upgrades.hull + (gameData.inventory.activeSkins.includes('viper') ? 1 : 0) + (gameData.inventory.activeSkins.includes('juggernaut') ? 1 : 0); this.cooldown = 0; this.shielded = false; this.magnetized = false; this.scoreMultiplier = 1; this.visible = true; this.timeWarped = false; this.inGasPocket = false; this.ghosted = false; this.orbMultiplier = 1; this.skinColor = { default: '#00d9ff', viper: '#22c55e', phoenix: '#f97316', twin_booster: '#00d9ff', stealth: '#9333ea', juggernaut: '#e11d48' }[gameData.inventory.activeSkins[gameData.inventory.activeSkins.length - 1]]; this.magnetRange = this.baseMagnetRange + (gameData.upgrades.magnet_range * 25); if(gameData.inventory.activeSkins.includes('stealth')) this.bombCooldown = 0; else this.bombCooldown = this.maxBombCooldown; }
+            draw() { if (!this.visible) return; const drawTrail = (offsetX) => { this.trail.forEach((pos, i) => { const alpha = (i + 1) / this.trail.length; ctx.beginPath(); ctx.arc(pos.x + offsetX, pos.y, (i / this.trail.length) * this.radius * 0.5, 0, Math.PI * 2); ctx.fillStyle = this.skinColor.replace(')', `, ${alpha * 0.5})`).replace('#', 'rgba(' + parseInt(this.skinColor.substring(1,3),16) + ',' + parseInt(this.skinColor.substring(3,5),16) + ',' + parseInt(this.skinColor.substring(5,7),16)); ctx.fill(); }); }; if (gameData.inventory.activeSkins.includes('twin_booster')) { drawTrail(-this.radius / 2); drawTrail(this.radius / 2); } else { drawTrail(0); } ctx.globalAlpha = this.ghosted ? 0.5 : 1; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = this.skinColor; ctx.shadowColor = this.skinColor; ctx.shadowBlur = 20; ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1; if (this.shielded) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 5, -Math.PI / 2, -Math.PI / 2 + (this.shieldTimer / this.maxShieldTime) * Math.PI * 2); ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)'; ctx.lineWidth = 4; ctx.stroke(); } if (this.timeWarped) { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 8, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)'; ctx.lineWidth = 2; ctx.stroke(); } }
+            update() { if (!this.visible) return; if (keys.w.pressed || keys.a.pressed || keys.s.pressed || keys.d.pressed) { if (keys.w.pressed) this.y -= this.wasdSpeed; if (keys.a.pressed) this.x -= this.wasdSpeed; if (keys.s.pressed) this.y += this.wasdSpeed; if (keys.d.pressed) this.x += this.wasdSpeed; this.targetX = this.x; this.targetY = this.y; } else { const currentSpeed = this.inGasPocket ? this.speed * 0.5 : this.speed; this.x += (this.targetX - this.x) * currentSpeed; this.y += (this.targetY - this.y) * currentSpeed; } this.trail.push({ x: this.x, y: this.y }); if (this.trail.length > 20) this.trail.shift(); if (this.cooldown > 0) this.cooldown--; else this.shoot(); if (this.bombCooldown > 0) this.bombCooldown--; if (this.magnetized) this.attractOrbs(); if (this.shieldTimer > 0) this.shieldTimer--; else this.shielded = false; this.draw(); }
+            shoot() { const threats = [...gameObjects.asteroids, ...gameObjects.comets, ...gameObjects.mines, ...gameObjects.drones, ...gameObjects.repair_drones, ...gameObjects.shield_drones, boss].filter(Boolean); if (threats.length === 0) return; let closestThreat = null; let minDistance = Infinity; threats.forEach(threat => { const dist = getDistance(this.x, this.y, threat.x, threat.y); if (dist < minDistance) { minDistance = dist; closestThreat = threat; } }); if (closestThreat && minDistance < 400) { const angle = Math.atan2(closestThreat.y - this.y, closestThreat.x - this.x); gameData.inventory.activeWeapons.forEach(weapon => { switch (weapon) { case 'laser': gameObjects.lasers.push(new Laser(this.x, this.y, angle)); break; case 'twin_laser': gameObjects.lasers.push(new Laser(this.x - 10, this.y, angle)); gameObjects.lasers.push(new Laser(this.x + 10, this.y, angle)); break; case 'spread': gameObjects.lasers.push(new Laser(this.x, this.y, angle - 0.2)); gameObjects.lasers.push(new Laser(this.x, this.y, angle)); gameObjects.lasers.push(new Laser(this.x, this.y, angle + 0.2)); break; case 'chain': gameObjects.lasers.push(new Laser(this.x, this.y, angle, 'chain')); break; case 'railgun': gameObjects.lasers.push(new Laser(this.x, this.y, angle, 'railgun')); break; case 'pulse_cannon': gameObjects.hazards.push(new Pulse(this.x, this.y)); break; case 'flak_cannon': gameObjects.lasers.push(new FlakShot(this.x, this.y, angle)); break; } }); this.cooldown = this.maxCooldown * (1 + (gameData.inventory.activeWeapons.length - 1) * 0.25); } }
+            dropBomb() { if (gameData.upgrades.bomb > 0 && this.bombCooldown <= 0) { gameObjects.hazards.push(new Bomb(this.x, this.y)); this.bombCooldown = this.maxBombCooldown; } }
+            attractOrbs() { gameObjects.orbs.forEach(orb => { const dist = getDistance(this.x, this.y, orb.x, orb.y); if (dist < this.magnetRange) { orb.x += (this.x - orb.x) * 0.05; orb.y += (this.y - orb.y) * 0.05; } }); }
+            takeDamage() { if (this.shielded || this.ghosted) return; this.lives--; updateLivesUI(); if (this.lives <= 0) { if (gameData.inventory.activeSkins.includes('phoenix') && !this.phoenixUsed) { this.phoenixUsed = true; this.lives = Math.ceil((this.baseLives + gameData.upgrades.hull) / 2); this.shielded = true; this.shieldTimer = this.maxShieldTime; createFloatingText("REBIRTH!", this.x, this.y, '#f97316'); updateLivesUI(); } else { endGame(); } } else { this.shielded = true; this.shieldTimer = 120; createExplosion(this.x, this.y, '#FFA500'); } }
+        }
+        class Bomb { constructor(x, y) { this.x = x; this.y = y; this.radius = 10; this.maxRadius = 200; this.life = 60; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = `rgba(255, 165, 0, ${this.life / 60})`; ctx.fill(); } update() { this.life--; if (this.life <= 0) { createExplosion(this.x, this.y, '#FFA500'); [...gameObjects.asteroids, ...gameObjects.comets, ...gameObjects.mines, ...gameObjects.drones, ...gameObjects.repair_drones, ...gameObjects.shield_drones].forEach(arr => { for(let i = arr.length - 1; i >= 0; i--) { if (getDistance(this.x, this.y, arr[i].x, arr[i].y) < this.maxRadius) { arr.splice(i, 1); enemiesDestroyedThisRun++; } } }); if (boss && getDistance(this.x, this.y, boss.x, boss.y) < this.maxRadius) boss.takeDamage(20); gameObjects.hazards.splice(gameObjects.hazards.indexOf(this), 1); } this.draw(); } }
+        class Pulse { constructor(x, y) { this.x = x; this.y = y; this.radius = 0; this.maxRadius = 100; this.life = 20; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.strokeStyle = `rgba(255, 255, 255, ${this.life / 20})`; ctx.lineWidth = 3; ctx.stroke(); } update() { this.radius += this.maxRadius / 20; this.life--; if (this.life <= 0) { gameObjects.hazards.splice(gameObjects.hazards.indexOf(this), 1); } else { [...gameObjects.asteroids, ...gameObjects.comets, ...gameObjects.mines, ...gameObjects.drones, ...gameObjects.repair_drones, ...gameObjects.shield_drones].forEach(arr => { for(let i = arr.length - 1; i >= 0; i--) { if (getDistance(this.x, this.y, arr[i].x, arr[i].y) < this.radius) { createExplosion(arr[i].x, arr[i].y, '#FFFFFF'); arr.splice(i, 1); enemiesDestroyedThisRun++; } } }); } this.draw(); } }
+        class Boss { constructor() { this.x = ui.canvas.width / 2; this.y = -100; this.radius = 50; this.maxHealth = 100; this.health = 100; this.targetY = 150; this.speed = 1; this.attackTimer = 0; this.attackPattern = 'idle'; this.disabled = false; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#be185d'; ctx.fill(); ctx.beginPath(); ctx.arc(this.x, this.y, this.radius - 10, 0, Math.PI * 2); ctx.fillStyle = '#831843'; ctx.fill(); } update() { this.y += (this.targetY - this.y) * 0.05; if (Math.abs(this.y - this.targetY) < 1) { this.attackTimer++; if (this.attackTimer > 120 && !this.disabled) { this.attack(); this.attackTimer = 0; } } this.draw(); } attack() { const patterns = ['volley', 'charge']; this.attackPattern = patterns[Math.floor(Math.random() * patterns.length)]; switch (this.attackPattern) { case 'volley': for (let i = 0; i < 8; i++) { gameObjects.lasers.push(new Laser(this.x, this.y, (i / 8) * Math.PI * 2, 'enemy')); } break; case 'charge': this.targetY = player.y; setTimeout(() => this.targetY = 150, 1000); break; } } takeDamage(amount) { this.health -= amount; ui.bossHealthBar.style.width = `${(this.health / this.maxHealth) * 100}%`; if (this.health <= 0) this.die(); } die() { createExplosion(this.x, this.y, '#be185d'); score += 1000; orbsThisRun += 100; gameData.stats.bossesDefeated++; boss = null; gameState = 'playing'; ui.bossHealthContainer.style.opacity = '0'; ui.bossHealthContainer.classList.add('hidden'); } }
+        class Laser { constructor(x, y, angle, type = 'standard') { this.x = x; this.y = y; this.radius = 3; this.speed = 8; this.dx = Math.cos(angle) * this.speed; this.dy = Math.sin(angle) * this.speed; this.type = type; this.chainCount = 3; this.lastTarget = null; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = this.type === 'chain' ? '#fde047' : (this.type === 'enemy' ? '#f43f5e' : '#f04'); ctx.shadowColor = this.type === 'chain' ? '#fde047' : (this.type === 'enemy' ? '#f43f5e' : '#f04'); ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0; } update() { this.x += this.dx; this.y += this.dy; this.draw(); } }
+        class HunterDrone { constructor(x, y) { this.x = x; this.y = y; this.radius = 12; this.speed = 1.5; this.angle = 0; } draw() { ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle + Math.PI / 2); ctx.beginPath(); ctx.moveTo(0, -this.radius); ctx.lineTo(this.radius, this.radius); ctx.lineTo(-this.radius, this.radius); ctx.closePath(); ctx.fillStyle = '#be185d'; ctx.fill(); ctx.restore(); } update() { const speed = (player.timeWarped ? this.speed * 0.3 : this.speed) * difficultyModifier; this.angle = Math.atan2(player.y - this.y, player.x - this.x); this.x += Math.cos(this.angle) * speed; this.y += Math.sin(this.angle) * speed; this.draw(); } }
+        class RepairDrone { constructor(x, y) { this.x = x; this.y = y; this.radius = 10; this.speed = 2; this.target = null; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#16a34a'; ctx.fill(); } update() { if (!this.target || this.target.health >= this.target.maxHealth) { this.findTarget(); } if (this.target) { const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x); this.x += Math.cos(angle) * this.speed; this.y += Math.sin(angle) * this.speed; if (getDistance(this.x, this.y, this.target.x, this.target.y) < this.target.radius) { this.target.health = Math.min(this.target.maxHealth, this.target.health + 0.1); } } this.draw(); } findTarget() { if (boss && boss.health < boss.maxHealth) { this.target = boss; } } }
+        class ShieldDrone { constructor(x, y) { this.x = x; this.y = y; this.radius = 10; this.speed = 2.5; this.target = null; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#0ea5e9'; ctx.fill(); if (this.target) { ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.target.x, this.target.y); ctx.strokeStyle = 'rgba(14, 165, 233, 0.5)'; ctx.stroke(); } } update() { if (!this.target || this.target.shielded) { this.findTarget(); } if (this.target) { this.target.shielded = true; const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x); this.x += Math.cos(angle) * this.speed; this.y += Math.sin(angle) * this.speed; } this.draw(); } findTarget() { const threats = [...gameObjects.drones, ...gameObjects.repair_drones, boss].filter(t => t && !t.shielded); if (threats.length > 0) this.target = threats[0]; } }
+        class Asteroid { constructor(x, y, radius, dx, dy) { this.x = x; this.y = y; this.radius = radius; this.dx = dx; this.dy = dy; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.strokeStyle = '#a0a0a0'; ctx.lineWidth = 2; ctx.stroke(); } update() { const speedMultiplier = (player.timeWarped ? 0.3 : 1) * difficultyModifier; this.x += this.dx * speedMultiplier; this.y += this.dy * speedMultiplier; this.draw(); } }
+        class Orb { constructor(x, y, radius) { this.x = x; this.y = y; this.radius = radius; this.baseRadius = radius; this.angle = 0; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#67e8f9'; ctx.shadowColor = '#67e8f9'; ctx.shadowBlur = 15; ctx.fill(); ctx.shadowBlur = 0; } update() { this.angle += 0.1; this.radius = this.baseRadius + Math.sin(this.angle) * 2; this.draw(); } }
+        class Particle { constructor(x, y, radius, color, velocity) { this.x = x; this.y = y; this.radius = radius; this.color = color; this.velocity = velocity; this.alpha = 1; } draw() { ctx.save(); ctx.globalAlpha = this.alpha; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false); ctx.fillStyle = this.color; ctx.fill(); ctx.restore(); } update() { this.x += this.velocity.x; this.y += this.velocity.y; this.alpha -= 0.02; this.draw(); } }
+        class Star { constructor(x, y, radius, color, speed) { this.x = x; this.y = y; this.radius = radius; this.color = color; this.speed = speed; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = this.color; ctx.fill(); } update() { this.y += this.speed; if (this.y > camera.y + ui.canvas.height) { this.y = camera.y; this.x = camera.x + random(0, ui.canvas.width); } this.draw(); } }
+        class PowerUp { constructor(x, y, type) { this.x = x; this.y = y; this.radius = 12; this.type = type; switch(type) { case 'shield': this.color = '#3b82f6'; this.text = 'S'; break; case 'magnet': this.color = '#8b5cf6'; this.text = 'M'; break; case 'multiplier': this.color = '#22c55e'; this.text = '2x'; break; case 'timewarp': this.color = '#fde047'; this.text = 'T'; break; case 'ghost': this.color = '#a78bfa'; this.text = 'G'; break; case 'orb_doubler': this.color = '#facc15'; this.text = 'O'; break; case 'emp': this.color = '#60a5fa'; this.text = 'E'; break; case 'turret': this.color = '#f87171'; this.text = 'Tu'; break; case 'black_hole': this.color = '#4c1d95'; this.text = 'BH'; break; case 'warp_drive': this.color = '#f472b6'; this.text = 'W'; break; case 'overcharge': this.color = '#fb923c'; this.text = 'OC'; break; } } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = this.color; ctx.fill(); ctx.fillStyle = '#111'; ctx.font = 'bold 14px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(this.text, this.x, this.y); } update() { this.draw(); } }
+        class Comet { constructor(x, y, dx, dy) { this.x = x; this.y = y; this.radius = 5; this.dx = dx; this.dy = dy; this.length = 50; } draw() { ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.x - this.dx * this.length, this.y - this.dy * this.length); ctx.strokeStyle = '#ffde7a'; ctx.lineWidth = 3; ctx.stroke(); } update() { const speedMultiplier = (player.timeWarped ? 0.3 : 1) * difficultyModifier; this.x += this.dx * speedMultiplier; this.y += this.dy * speedMultiplier; this.draw(); } }
+        class Mine { constructor(x, y) { this.x = x; this.y = y; this.radius = 10; this.pulseRadius = 10; this.pulseMaxRadius = 40; this.pulseSpeed = 0.5; this.isExpanding = true; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.pulseRadius, 0, Math.PI * 2); ctx.strokeStyle = `rgba(255, 77, 77, ${1 - this.pulseRadius / this.pulseMaxRadius})`; ctx.lineWidth = 2; ctx.stroke(); ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#ff4d4d'; ctx.fill(); } update() { const speedMultiplier = player.timeWarped ? 0.3 : 1; if (this.isExpanding) { this.pulseRadius += this.pulseSpeed * speedMultiplier; if (this.pulseRadius >= this.pulseMaxRadius) this.isExpanding = false; } else { this.pulseRadius -= this.pulseSpeed * speedMultiplier; if (this.pulseRadius <= this.radius) this.isExpanding = true; } this.draw(); } }
+        class GasPocket { constructor(x, y) { this.x = x; this.y = y; this.radius = 60; this.particles = []; for(let i=0; i<15; i++) this.particles.push({x: random(-this.radius, this.radius), y: random(-this.radius, this.radius), r: random(1,3), a: random(0, Math.PI*2), s: random(0.1, 0.3)}); } draw() { this.particles.forEach(p => { ctx.beginPath(); ctx.arc(this.x + p.x, this.y + p.y, p.r, 0, Math.PI*2); ctx.fillStyle = 'rgba(255, 150, 255, 0.1)'; ctx.fill(); }); } update() { this.particles.forEach(p => { p.a += 0.01; p.x += Math.cos(p.a) * p.s; p.y += Math.sin(p.a) * p.s; if(getDistance(0,0,p.x,p.y) > this.radius) { p.x = 0; p.y = 0; } }); if(getDistance(player.x, player.y, this.x, this.y) < this.radius) player.inGasPocket = true; this.draw(); } }
+        class CrystalSpire { constructor(x, y) { this.x = x; this.y = y; this.radius = 15; this.height = random(80, 150); this.angle = random(0, Math.PI*2); } draw() { ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle); ctx.beginPath(); ctx.moveTo(0, -this.height/2); ctx.lineTo(this.radius, this.height/2); ctx.lineTo(-this.radius, this.height/2); ctx.closePath(); ctx.fillStyle = 'rgba(150, 200, 255, 0.5)'; ctx.strokeStyle = '#cceeff'; ctx.stroke(); ctx.fill(); ctx.restore(); } update() { this.draw(); } }
+        class SolarFlare { constructor() { this.y = -100; this.height = 50; this.speed = 2; this.active = false; } draw() { if(!this.active) return; ctx.fillStyle = 'rgba(255, 100, 0, 0.4)'; ctx.fillRect(0, this.y, ui.canvas.width, this.height); } update() { if(!this.active) return; this.y += this.speed; if(this.y > camera.y + ui.canvas.height) this.active = false; if(player.y > this.y && player.y < this.y + this.height) player.takeDamage(); this.draw(); } activate() { this.y = camera.y - this.height; this.active = true; createFloatingText("SOLAR FLARE!", ui.canvas.width / 2, 50, '#f97316'); } }
+        class Turret { constructor(x, y) { this.x = x; this.y = y; this.radius = 10; this.life = 600; this.cooldown = 0; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#f87171'; ctx.fill(); } update() { this.life--; if (this.life <= 0) { gameObjects.hazards.splice(gameObjects.hazards.indexOf(this), 1); } this.x = player.x + 40; this.y = player.y; if (this.cooldown > 0) this.cooldown--; else this.shoot(); this.draw(); } shoot() { const threats = [...gameObjects.asteroids, ...gameObjects.comets, ...gameObjects.mines, ...gameObjects.drones, ...gameObjects.repair_drones, boss].filter(Boolean); if (threats.length === 0) return; let closestThreat = null; let minDistance = Infinity; threats.forEach(threat => { const dist = getDistance(this.x, this.y, threat.x, threat.y); if (dist < minDistance) { minDistance = dist; closestThreat = threat; } }); if (closestThreat && minDistance < 300) { gameObjects.lasers.push(new Laser(this.x, this.y, Math.atan2(closestThreat.y - this.y, closestThreat.x - this.x))); this.cooldown = 60; } } }
+        class BlackHole { constructor(x, y) { this.x = x; this.y = y; this.radius = 10; this.maxRadius = 150; this.life = 300; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#000'; ctx.fill(); } update() { this.life--; if (this.life <= 0) { gameObjects.hazards.splice(gameObjects.hazards.indexOf(this), 1); } this.radius += (this.maxRadius - this.radius) * 0.05; [...gameObjects.asteroids, ...gameObjects.comets, ...gameObjects.mines, ...gameObjects.drones, ...gameObjects.repair_drones, ...gameObjects.orbs].forEach(arr => { for(let i = arr.length - 1; i >= 0; i--) { const obj = arr[i]; if (obj) { const dist = getDistance(this.x, this.y, obj.x, obj.y); if (dist < this.radius) { obj.x += (this.x - obj.x) * 0.1; obj.y += (this.y - obj.y) * 0.1; if (dist < 10) { arr.splice(i, 1); if(arr !== gameObjects.orbs) enemiesDestroyedThisRun++; } } } } }); this.draw(); } }
+        class FlakShot { constructor(x, y, angle) { this.x = x; this.y = y; this.radius = 4; this.speed = 6; this.dx = Math.cos(angle) * this.speed; this.dy = Math.sin(angle) * this.speed; this.life = 30; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fillStyle = '#f97316'; ctx.fill(); } update() { this.life--; if (this.life <= 0) { for (let i = 0; i < 8; i++) { gameObjects.lasers.push(new Laser(this.x, this.y, random(0, Math.PI * 2))); } gameObjects.lasers.splice(gameObjects.lasers.indexOf(this), 1); } this.x += this.dx; this.y += this.dy; this.draw(); } }
+        class MagneticField { constructor(x, y) { this.x = x; this.y = y; this.radius = 200; } draw() { ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'; ctx.stroke(); } update() { if (getDistance(player.x, player.y, this.x, this.y) < this.radius) { const angle = Math.atan2(this.y - player.y, this.x - player.x); player.x += Math.cos(angle) * 0.5; player.y += Math.sin(angle) * 0.5; } this.draw(); } }
+
+        function init(isRestart = false) {
+            currentEnvironment = environments[gameData.inventory.equippedEnvironment];
+            ui.canvas.style.background = currentEnvironment.bg;
+
+            score = 0; ui.score.innerText = score; orbsThisRun = 0; enemiesDestroyedThisRun = 0;
+            difficultyModifier = 1;
+            ui.highScore.innerText = gameData.stats.highScore;
+            ui.canvas.width = ui.canvas.parentElement.clientWidth; ui.canvas.height = ui.canvas.parentElement.clientHeight;
+            camera = { x: 0, y: 0 };
+            worldBounds = { top: -100000, bottom: 100000, left: -1000, right: 1000 };
+            if (!player || isRestart) player = new Player();
+            player.reset();
+            gameObjects = { asteroids: [], orbs: [], particles: [], stars: [], powerups: [], comets: [], mines: [], lasers: [], drones: [], hazards: [], repair_drones: [], shield_drones: [] };
+            boss = null;
+            for (let i = 0; i < 3; i++) {
+                const speed = 0.1 + i * 0.2;
+                for (let j = 0; j < 50; j++) {
+                    gameObjects.stars.push(new Star(random(0, ui.canvas.width), random(0, ui.canvas.height), random(0.5, 1.5 + i), currentEnvironment.starColor, speed));
+                }
+            }
+            updateLivesUI();
+            updateLevelUI();
+        }
+        function startGame(mode) {
+            gameMode = mode;
+            init(true);
+            gameState = 'playing';
+            if (gameMode === 'survival') {
+                currentWave = 1;
+                ui.waveCounter.classList.remove('hidden');
+                ui.wave.innerText = currentWave;
+                startWave(currentWave);
+            }
+            Object.values(ui.screens).forEach(s => s.classList.add('hidden'));
+            ui.weaponCooldownContainer.classList.remove('hidden');
+            if(gameData.upgrades.bomb > 0) ui.bombCooldownContainer.classList.remove('hidden');
+            ui.levelContainer.classList.remove('hidden');
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            gameLoop();
+        }
+        function endGame() { if (gameState === 'gameOver') return; gameState = 'gameOver'; createExplosion(player.x, player.y, '#ff4d4d'); player.visible = false; gameData.inventory.totalOrbs += orbsThisRun; gameData.stats.gamesPlayed++; gameData.stats.totalOrbsCollected += orbsThisRun; gameData.stats.enemiesDestroyed += enemiesDestroyedThisRun; if (score > gameData.stats.highScore) { gameData.stats.highScore = score; ui.gameOver.newHighScore.classList.remove('hidden'); } else { ui.gameOver.newHighScore.classList.add('hidden'); } saveGameData(); setTimeout(() => { ui.gameOver.finalScore.innerText = score; ui.gameOver.orbsCollected.innerText = orbsThisRun; ui.screens.gameOver.classList.remove('hidden'); ui.weaponCooldownContainer.classList.add('hidden'); ui.bombCooldownContainer.classList.add('hidden'); ui.levelContainer.classList.add('hidden'); ui.waveCounter.classList.add('hidden'); }, 500); }
+        
+        let spawnTimers = { regular: 0, hazard: 0, boss: 0 };
+        function gameLoop() {
+            ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
+            
+            camera.x += (player.x - camera.x - ui.canvas.width / 2) * 0.05;
+            camera.y += (player.y - camera.y - ui.canvas.height / 2) * 0.05;
+
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+
+            updateGameObjects();
+            if (gameState === 'playing' || gameState === 'bossfight') {
+                handleCollisions(); handlePickups(); handleNearMisses();
+                ui.weaponCooldownBar.style.width = `${100 - (player.cooldown / player.maxCooldown * 100)}%`;
+                if(gameData.upgrades.bomb > 0) ui.bombCooldownOverlay.style.height = `${(player.bombCooldown / player.maxBombCooldown * 100)}%`;
+            }
+            if (gameState === 'playing') {
+                if (gameMode === 'endless') {
+                    difficultyModifier = 1 + Math.floor(score / 500) * 0.1;
+                    spawnTimers.regular++; spawnTimers.hazard++;
+                    if (spawnTimers.regular % Math.max(15, 60 / difficultyModifier) === 0) spawnObject('asteroid');
+                    if (spawnTimers.regular % Math.max(30, (60 - gameData.upgrades.orb_spawn * 5) / difficultyModifier) === 0) spawnObject('orb');
+                    if (spawnTimers.regular % 800 === 0) spawnObject('powerup');
+                    if (spawnTimers.regular % Math.max(60, 180 / difficultyModifier) === 0) spawnObject('comet');
+                    if (spawnTimers.regular % 450 === 0) spawnObject('mine');
+                    if (spawnTimers.regular % 600 === 0) spawnObject('drone');
+                    if (spawnTimers.regular % 1200 === 0) spawnObject('repair_drone');
+                    if (spawnTimers.regular % 1500 === 0) spawnObject('shield_drone');
+                    if (spawnTimers.hazard > 900 && currentEnvironment.hazard) { spawnObject(currentEnvironment.hazard); spawnTimers.hazard = 0; }
+                } else if (gameMode === 'survival') {
+                    if (waveInProgress && isWaveCleared()) {
+                        waveInProgress = false;
+                        advanceWave();
+                    }
+                }
+            }
+            ctx.restore();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+        function spawnObject(type, spawnMethod = 'circular') {
+            let x, y;
+            if (spawnMethod === 'circular') {
+                const angle = random(0, Math.PI * 2);
+                const radius = Math.max(ui.canvas.width, ui.canvas.height);
+                x = player.x + Math.cos(angle) * radius;
+                y = player.y + Math.sin(angle) * radius;
+            } else { // 'top_screen' for waves
+                x = player.x + random(-ui.canvas.width/2, ui.canvas.width/2);
+                y = camera.y - 100;
+            }
+
+            switch(type) {
+                case 'asteroid': const r = random(20, 50), a = Math.atan2(player.y - y, player.x - x), s = random(.5,2); gameObjects.asteroids.push(new Asteroid(x,y,r,Math.cos(a)*s, Math.sin(a)*s)); break;
+                case 'comet': const ca = Math.atan2(player.y - y, player.x - x), cs = random(4,7); gameObjects.comets.push(new Comet(x,y,Math.cos(ca)*cs, Math.sin(ca)*cs)); break;
+                case 'mine': gameObjects.mines.push(new Mine(player.x + random(-500, 500), player.y + random(-500, 500))); break;
+                case 'drone': gameObjects.drones.push(new HunterDrone(x, y)); break;
+                case 'repair_drone': gameObjects.repair_drones.push(new RepairDrone(x, y)); break;
+                case 'shield_drone': gameObjects.shield_drones.push(new ShieldDrone(x, y)); break;
+                case 'orb': gameObjects.orbs.push(new Orb(player.x + random(-500, 500), player.y + random(-500, 500), 8)); break;
+                case 'powerup': const types = ['shield','magnet','multiplier', 'timewarp', 'ghost', 'orb_doubler', 'emp', 'turret', 'black_hole', 'warp_drive', 'overcharge'], pt = types[Math.floor(Math.random()*types.length)]; gameObjects.powerups.push(new PowerUp(player.x + random(-500, 500), player.y + random(-500, 500), pt)); break;
+                case 'gas_pocket': gameObjects.hazards.push(new GasPocket(player.x + random(-500, 500), player.y + random(-500, 500))); break;
+                case 'crystal_spire': gameObjects.hazards.push(new CrystalSpire(player.x + random(-500, 500), player.y + random(-500, 500))); break;
+                case 'solar_flare': if (!gameObjects.hazards.find(h => h instanceof SolarFlare)) { const flare = new SolarFlare(); gameObjects.hazards.push(flare); flare.activate(); } break;
+                case 'magnetic_field': gameObjects.hazards.push(new MagneticField(player.x + random(-500, 500), player.y + random(-500, 500))); break;
+            }
+        }
+        function createExplosion(x, y, color) { for (let i = 0; i < 30; i++) gameObjects.particles.push(new Particle(x, y, random(1, 4), color, { x: random(-5, 5), y: random(-5, 5) })); }
+        function updateLivesUI() { ui.livesContainer.innerHTML = ''; for(let i=0; i < player.lives; i++) { const lifeIcon = document.createElement('div'); lifeIcon.style.width = '1.25rem'; lifeIcon.style.height = '1.25rem'; lifeIcon.style.backgroundColor = player.skinColor || '#00d9ff'; lifeIcon.style.clipPath = 'polygon(50% 0%, 100% 100%, 0% 100%)'; lifeIcon.style.transform = 'rotate(180deg)'; ui.livesContainer.appendChild(lifeIcon); } }
+        
+        function updateGameObjects() {
+            Object.values(gameObjects).forEach(arr => { if (Array.isArray(arr)) arr.forEach(o => o.update ? o.update() : o.draw()); });
+            if (boss) boss.update();
+            player.update();
+        }
+
+        function handleCollisions() {
+            player.inGasPocket = false; // Reset before checks
+            const checkHit = (obj, arr, i) => { player.takeDamage(); createExplosion(obj.x, obj.y, '#ff4d4d'); arr.splice(i, 1); enemiesDestroyedThisRun++; };
+            [gameObjects.asteroids, gameObjects.comets, gameObjects.mines, gameObjects.drones, gameObjects.repair_drones, gameObjects.shield_drones].forEach(arr => arr.forEach((obj, i) => { if (getDistance(player.x, player.y, obj.x, obj.y) < player.radius + obj.radius) checkHit(obj, arr, i); }));
+            gameObjects.hazards.forEach(h => { if (h instanceof CrystalSpire && getDistance(player.x, player.y, h.x, h.y) < player.radius + h.radius) player.takeDamage(); });
+            gameObjects.lasers.forEach((laser, laserIndex) => { if (laser.type === 'enemy' && getDistance(player.x, player.y, laser.x, laser.y) < player.radius + laser.radius) { player.takeDamage(); gameObjects.lasers.splice(laserIndex, 1); return; } const checkLaserHit = (obj, arr, i) => { if (getDistance(laser.x, laser.y, obj.x, obj.y) < obj.radius) { if (laser.type === 'chain' && laser.chainCount > 0) { laser.chainCount--; laser.lastTarget = obj; const threats = [...gameObjects.asteroids, ...gameObjects.comets, ...gameObjects.mines, ...gameObjects.drones, ...gameObjects.repair_drones, ...gameObjects.shield_drones, boss].filter(t => t && t !== obj && t !== laser.lastTarget); let nextTarget = null, minDistance = 100; threats.forEach(t => { const d = getDistance(obj.x, obj.y, t.x, t.y); if (d < minDistance) { minDistance = d; nextTarget = t; } }); if (nextTarget) { ctx.beginPath(); ctx.moveTo(obj.x, obj.y); ctx.lineTo(nextTarget.x, nextTarget.y); ctx.strokeStyle = '#fde047'; ctx.lineWidth = 2; ctx.stroke(); laser.x = nextTarget.x; laser.y = nextTarget.y; } } createExplosion(obj.x, obj.y, '#FFA500'); arr.splice(i, 1); enemiesDestroyedThisRun++; if (laser.type !== 'chain' || laser.chainCount <= 0) { if (gameObjects.lasers[laserIndex]) gameObjects.lasers.splice(laserIndex, 1); } return true; } return false; }; if (boss && checkLaserHit(boss, [], 0)) { boss.takeDamage(5); return; } for (let arr of [gameObjects.asteroids, gameObjects.comets, gameObjects.mines, gameObjects.drones, gameObjects.repair_drones, gameObjects.shield_drones]) for (let i = arr.length - 1; i >= 0; i--) if (checkLaserHit(arr[i], arr, i)) return; });
+        }
+        function handlePickups() { gameObjects.orbs.forEach((orb, i) => { if (getDistance(player.x, player.y, orb.x, orb.y) < player.radius + orb.radius) { const scoreGained = 10 * player.scoreMultiplier; const orbsGained = 1 * player.orbMultiplier * (1 + gameData.playerProfile.prestige * 0.1); score += scoreGained; orbsThisRun += orbsGained; ui.score.innerText = score; addXP(scoreGained / 10); if(player.scoreMultiplier > 1) createFloatingText(`+${scoreGained}`, orb.x - camera.x, orb.y - camera.y, '#22c55e'); if(player.orbMultiplier > 1) createFloatingText(`+${orbsGained} Orb`, orb.x - camera.x, orb.y - camera.y + 20, '#facc15'); createExplosion(orb.x, orb.y, '#67e8f9'); gameObjects.orbs.splice(i, 1); } }); gameObjects.powerups.forEach((p, i) => { if (getDistance(player.x, player.y, p.x, p.y) < player.radius + p.radius) { activatePowerUp(p.type); createFloatingText(p.type.toUpperCase(), p.x - camera.x, p.y - camera.y, p.color); gameObjects.powerups.splice(i, 1); } }); }
+        function activatePowerUp(type) { switch(type) { case 'shield': player.shielded = true; player.shieldTimer = player.maxShieldTime; break; case 'magnet': player.magnetized = true; setTimeout(() => player.magnetized = false, 8000); break; case 'multiplier': player.scoreMultiplier = 2; setTimeout(() => player.scoreMultiplier = 1, 10000); break; case 'timewarp': player.timeWarped = true; setTimeout(() => player.timeWarped = false, 3000); break; case 'ghost': player.ghosted = true; setTimeout(() => player.ghosted = false, 4000); break; case 'orb_doubler': player.orbMultiplier = 2; setTimeout(() => player.orbMultiplier = 1, 10000); break; case 'emp': gameObjects.drones.forEach(d => createExplosion(d.x, d.y, '#60a5fa')); gameObjects.drones = []; if (boss) { boss.disabled = true; setTimeout(() => boss.disabled = false, 5000); } break; case 'turret': gameObjects.hazards.push(new Turret(player.x, player.y)); break; case 'black_hole': gameObjects.hazards.push(new BlackHole(player.x, player.y)); break; case 'warp_drive': player.y -= 1000; break; case 'overcharge': player.cooldown = 0; player.maxCooldown /= 2; setTimeout(() => player.maxCooldown *= 2, 5000); break; } }
+        function handleNearMisses() { gameObjects.asteroids.forEach(a => { if (!a.missed && getDistance(player.x, player.y, a.x, a.y) < a.radius + player.radius + 30) { score += 5; ui.score.innerText = score; a.missed = true; createFloatingText('+5', a.x - camera.x, a.y - camera.y, '#eab308'); } }); }
+        function saveGameData() { localStorage.setItem('cosmicCourierGameData', JSON.stringify(gameData)); }
+        function loadGameData() { const saved = localStorage.getItem('cosmicCourierGameData'); gameData = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(defaultGameData)); }
+        
+        function updateHangarUI() { ui.hangar.totalOrbs.innerText = gameData.inventory.totalOrbs; ui.hangar.upgradeButtons.forEach(b => { const type = b.dataset.upgrade; const level = gameData.upgrades[type]; const cost = upgradeCosts[type][level]; if (level >= upgradeCosts[type].length) { b.innerText = 'MAX'; b.classList.add('disabled'); } else { b.innerText = type === 'bomb' && level === 0 ? `UNLOCK (${cost})` : `UPGRADE (${cost})`; b.classList.toggle('disabled', gameData.inventory.totalOrbs < cost); } }); ui.hangar.itemButtons.forEach(b => { const item = b.dataset.item; const type = b.dataset.type; const itemKey = `unlocked${type.charAt(0).toUpperCase() + type.slice(1)}s`; const activeKey = `active${type.charAt(0).toUpperCase() + type.slice(1)}s`; if (gameData.inventory[itemKey].includes(item)) { if (gameData.inventory[activeKey] && gameData.inventory[activeKey].includes(item)) { b.innerText = 'EQUIPPED'; b.classList.add('equipped'); b.classList.remove('disabled'); } else { b.innerText = 'SELECT'; b.classList.remove('equipped', 'disabled'); } } else { const cost = itemCosts[type][item]; b.innerText = `UNLOCK (${cost})`; b.classList.toggle('disabled', gameData.inventory.totalOrbs < cost); b.classList.remove('equipped'); } }); ui.buttons.prestige.classList.toggle('disabled', gameData.playerProfile.level < 50); }
+        function purchaseUpgrade(e) { const type = e.target.dataset.upgrade; const level = gameData.upgrades[type]; if (level >= upgradeCosts[type].length) return; const cost = upgradeCosts[type][level]; if (gameData.inventory.totalOrbs >= cost) { gameData.inventory.totalOrbs -= cost; gameData.upgrades[type]++; saveGameData(); updateHangarUI(); } }
+        function handleHangarItem(e) { const item = e.target.dataset.item; const type = e.target.dataset.type; const itemKey = `unlocked${type.charAt(0).toUpperCase() + type.slice(1)}s`; const activeKey = `active${type.charAt(0).toUpperCase() + type.slice(1)}s`; if (gameData.inventory[itemKey].includes(item)) { if (gameData.inventory[activeKey].includes(item)) { if (gameData.inventory[activeKey].length > 1) { gameData.inventory[activeKey] = gameData.inventory[activeKey].filter(i => i !== item); } } else { gameData.inventory[activeKey].push(item); } } else { const cost = itemCosts[type][item]; if (gameData.inventory.totalOrbs >= cost) { gameData.inventory.totalOrbs -= cost; gameData.inventory[itemKey].push(item); if (!gameData.inventory[activeKey].includes(item)) gameData.inventory[activeKey].push(item); } } saveGameData(); updateHangarUI(); }
+        function updateMissionsUI() { ui.missions.list.innerHTML = ''; Object.keys(missionDefs).forEach(key => { const mission = missionDefs[key]; const progress = gameData.stats[mission.stat] || 0; const isComplete = progress >= mission.target; const hasClaimed = gameData.missions[key] === -1; const el = document.createElement('div'); el.className = 'bg-black/30 p-3 rounded-lg'; el.innerHTML = `<div class="flex justify-between items-center"><div><h4 class="font-bold ${isComplete ? 'text-green-400' : ''}">${mission.title}</h4><p class="text-sm text-gray-400">${mission.description}</p></div><button data-mission="${key}" class="mission-claim-button bg-yellow-500 font-bold py-1 px-3 rounded">${hasClaimed ? 'CLAIMED' : 'CLAIM'}</button></div><div class="w-full bg-gray-700 rounded-full h-2.5 mt-2"><div class="bg-cyan-400 h-2.5 rounded-full" style="width: ${Math.min(100, (progress / mission.target) * 100)}%"></div></div>`; const button = el.querySelector('button'); if (!isComplete || hasClaimed) button.classList.add('disabled'); if (hasClaimed) button.style.backgroundColor = '#6b7280'; ui.missions.list.appendChild(el); }); }
+        function claimMissionReward(e) { const key = e.target.dataset.mission; if (!key || e.target.classList.contains('disabled')) return; gameData.inventory.totalOrbs += missionDefs[key].reward; gameData.missions[key] = -1; saveGameData(); updateMissionsUI(); }
+        function updateStatsUI() { ui.stats.gamesPlayed.innerText = gameData.stats.gamesPlayed; ui.stats.totalOrbs.innerText = gameData.stats.totalOrbsCollected; ui.stats.enemiesDestroyed.innerText = gameData.stats.enemiesDestroyed; ui.stats.bossesDefeated.innerText = gameData.stats.bossesDefeated; ui.stats.highScore.innerText = gameData.stats.highScore; }
+        function checkDailyReward() { const now = new Date(); const lastClaim = new Date(gameData.lastRewardClaim); if (now.setHours(0,0,0,0) > lastClaim.setHours(0,0,0,0)) { ui.buttons.dailyReward.classList.remove('hidden'); } }
+        function claimDailyReward() { gameData.inventory.totalOrbs += 50; gameData.lastRewardClaim = Date.now(); saveGameData(); ui.buttons.dailyReward.classList.add('hidden'); createFloatingText('+50 Orbs', ui.canvas.width / 2, ui.canvas.height / 2, '#facc15'); }
+        function xpForLevel(level) { return Math.floor(100 * Math.pow(1.5, level - 1)); }
+        function addXP(amount) { gameData.playerProfile.xp += amount; const xpNeeded = xpForLevel(gameData.playerProfile.level); if (gameData.playerProfile.xp >= xpNeeded) { gameData.playerProfile.level++; gameData.playerProfile.xp -= xpNeeded; gameData.inventory.totalOrbs += 100; createFloatingText('LEVEL UP! +100 Orbs', ui.canvas.width / 2, ui.canvas.height / 2, '#a855f7'); } updateLevelUI(); }
+        function updateLevelUI() { const { level, xp } = gameData.playerProfile; const xpNeeded = xpForLevel(level); ui.level.innerText = level; ui.xp.innerText = Math.floor(xp); ui.xpToNextLevel.innerText = xpNeeded; ui.xpBar.style.width = `${(xp / xpNeeded) * 100}%`; }
+        function prestige() { if (gameData.playerProfile.level < 50) return; gameData.playerProfile.prestige++; gameData.playerProfile.level = 1; gameData.playerProfile.xp = 0; gameData.upgrades = JSON.parse(JSON.stringify(defaultGameData.upgrades)); saveGameData(); updateHangarUI(); }
+        function isWaveCleared() { return gameObjects.asteroids.length === 0 && gameObjects.comets.length === 0 && gameObjects.mines.length === 0 && gameObjects.drones.length === 0 && gameObjects.repair_drones.length === 0 && gameObjects.shield_drones.length === 0; }
+        function advanceWave() { currentWave++; if (currentWave > 50) { ui.bossName.innerText = "THE ERADICATOR"; boss = new Boss(); boss.maxHealth = 500; boss.health = 500; ui.bossHealthContainer.classList.remove('hidden'); setTimeout(() => ui.bossHealthContainer.style.opacity = '1', 100); } else { ui.wave.innerText = currentWave; createFloatingText(`WAVE ${currentWave}`, ui.canvas.width / 2, ui.canvas.height / 2, '#FFFFFF'); setTimeout(() => startWave(currentWave), 2000); } }
+        function startWave(wave) { const waveData = WAVE_DEFINITIONS[wave - 1]; for (const enemy in waveData) { for (let i = 0; i < waveData[enemy]; i++) { spawnObject(enemy, 'top_screen'); } } waveInProgress = true; }
+        const WAVE_DEFINITIONS = [ { asteroids: 5 }, { asteroids: 8 }, { asteroids: 5, comets: 2 }, { drones: 3 }, { asteroids: 10, drones: 2 }, { comets: 5, mines: 3 }, { shield_drones: 1, drones: 3 }, { repair_drones: 2, asteroids: 5 }, { drones: 8 }, { asteroids: 15, comets: 5, mines: 5 }, { shield_drones: 2, drones: 5 }, { repair_drones: 3, drones: 5 }, { asteroids: 20 }, { comets: 10 }, { mines: 10 }, { drones: 10, shield_drones: 3 }, { asteroids: 10, repair_drones: 3 }, { comets: 8, drones: 4 }, { shield_drones: 4, repair_drones: 4 }, { asteroids: 25, drones: 5 }, { comets: 15 }, { mines: 15 }, { drones: 15 }, { shield_drones: 5, drones: 10 }, { repair_drones: 5, asteroids: 10 }, { asteroids: 30 }, { comets: 20 }, { mines: 20 }, { drones: 20 }, { shield_drones: 6, repair_drones: 6 }, { asteroids: 20, comets: 10 }, { drones: 15, mines: 5 }, { shield_drones: 7, drones: 10 }, { repair_drones: 7, asteroids: 10 }, { asteroids: 35 }, { comets: 25 }, { mines: 25 }, { drones: 25 }, { shield_drones: 8, repair_drones: 8 }, { asteroids: 25, comets: 15 }, { drones: 20, mines: 10 }, { shield_drones: 9, drones: 15 }, { repair_drones: 9, asteroids: 15 }, { asteroids: 40 }, { comets: 30 }, { mines: 30 }, { drones: 30 }, { shield_drones: 10, repair_drones: 10 }, { asteroids: 30, comets: 20, drones: 10 }, { asteroids: 50, comets: 25, mines: 10, drones: 15, repair_drones: 5, shield_drones: 5 } ];
+
+        function handlePointerMove(e) { const r = ui.canvas.getBoundingClientRect(); const x = e.touches ? e.touches[0].clientX : e.clientX; const y = e.touches ? e.touches[0].clientY : e.clientY; mouse.x = x - r.left; mouse.y = y - r.top; if (mouse.down && (gameState === 'playing' || gameState === 'bossfight')) { player.targetX = mouse.x + camera.x; player.targetY = mouse.y + camera.y; } }
+        function handlePointerDown(e) { mouse.down = true; handlePointerMove(e); }
+        function handlePointerUp() { mouse.down = false; }
+        window.addEventListener('resize', () => { if(gameState !== 'gameOver') init(); });
+        window.addEventListener('keydown', (e) => { if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()].pressed = true; if(e.key.toLowerCase() === 'b') player.dropBomb(); });
+        window.addEventListener('keyup', (e) => { if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()].pressed = false; });
+        ui.canvas.addEventListener('pointerdown', handlePointerDown); ui.canvas.addEventListener('pointerup', handlePointerUp); ui.canvas.addEventListener('pointermove', handlePointerMove);
+        ui.buttons.start.addEventListener('click', () => startGame('endless'));
+        ui.buttons.survival.addEventListener('click', () => startGame('survival'));
+        ui.buttons.restart.addEventListener('click', () => startGame(gameMode));
+        const showHangar = () => { Object.values(ui.screens).forEach(s => s.classList.add('hidden')); ui.screens.hangar.classList.remove('hidden'); updateHangarUI(); };
+        ui.buttons.hangar.addEventListener('click', showHangar); ui.buttons.gameOverHangar.addEventListener('click', showHangar);
+        ui.buttons.back.addEventListener('click', () => { ui.screens.hangar.classList.add('hidden'); ui.screens.start.classList.remove('hidden'); checkDailyReward(); });
+        ui.buttons.missions.addEventListener('click', () => { ui.screens.start.classList.add('hidden'); ui.screens.missions.classList.remove('hidden'); updateMissionsUI(); });
+        ui.buttons.missionsBack.addEventListener('click', () => { ui.screens.missions.classList.add('hidden'); ui.screens.start.classList.remove('hidden'); });
+        ui.missions.list.addEventListener('click', (e) => { if(e.target.classList.contains('mission-claim-button')) claimMissionReward(e); });
+        ui.buttons.stats.addEventListener('click', () => { ui.screens.hangar.classList.add('hidden'); ui.screens.stats.classList.remove('hidden'); updateStatsUI(); });
+        ui.buttons.statsBack.addEventListener('click', () => { ui.screens.stats.classList.add('hidden'); ui.screens.hangar.classList.remove('hidden'); });
+        ui.hangar.upgradeButtons.forEach(b => b.addEventListener('click', purchaseUpgrade)); ui.hangar.itemButtons.forEach(b => b.addEventListener('click', handleHangarItem));
+        ui.buttons.dailyReward.addEventListener('click', claimDailyReward);
+        ui.buttons.prestige.addEventListener('click', prestige);
+        ui.buttons.victoryContinue.addEventListener('click', () => { ui.screens.victory.classList.add('hidden'); ui.screens.start.classList.remove('hidden'); });
+
+        loadGameData(); init(); checkDailyReward(); gameLoop();
+    </script>
+</body>
+</html>
